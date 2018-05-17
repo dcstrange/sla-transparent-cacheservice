@@ -79,37 +79,37 @@ main(int argc, char** argv)
 // 1 4 0 0 500000 106230 5242880 LRU 0
 
 // trace11: 0 0 11 1 0 8000000 30 PV3
-    if (argc == 10)
+    if (argc == 4)
     {
-        UserId = atoi(argv[1]);
-        TraceId = atoi(argv[2]);
-        WriteOnly = atoi(argv[3]);
-        StartLBA = atol(argv[4]);
+ //       UserId = atoi(argv[1]);
+ //       TraceId = atoi(argv[2]);
+ //       WriteOnly = atoi(argv[3]);
+ //       StartLBA = atol(argv[4]);
 
-        NBLOCK_MAX_CACHE_SIZE = atol(argv[5]);
-        NBLOCK_SSD_CACHE = NTABLE_SSD_CACHE = atol(argv[6]);
-        NBLOCK_SMR_FIFO = atol(argv[7]) * (ZONESZ / BLCKSZ);
+         NBLOCK_MAX_CACHE_SIZE = atol(argv[1]);
+         NBLOCK_SSD_CACHE = NTABLE_SSD_CACHE = atol(argv[2]);
+//        NBLOCK_SMR_FIFO = atol(argv[7]) * (ZONESZ / BLCKSZ);
 
-        if (strcmp(argv[8],"LRU") == 0)
+        if (strcmp(argv[3],"LRU") == 0)
             EvictStrategy = LRU_private;
-        else if (strcmp(argv[8],"LRU_RW") == 0)
+         else if (strcmp(argv[3],"LRU_RW") == 0)
             EvictStrategy = LRU_rw;
-        else if (strcmp(argv[8],"PV3") == 0)
+        else if (strcmp(argv[3],"PV3") == 0)
             EvictStrategy = PV3;
-        else if (strcmp(argv[8],"PORE") == 0)
+        else if (strcmp(argv[3],"PORE") == 0)
             EvictStrategy = PORE;
-        else if(strcmp(argv[8],"MOST") == 0)
+        else if(strcmp(argv[3],"MOST") == 0)
             EvictStrategy = MOST;
-        else if(strcmp(argv[8],"MOST_RW") == 0)
+        else if(strcmp(argv[3],"MOST_RW") == 0)
             EvictStrategy = MOST_RW;
 
-        if(atoi(argv[9]) < 0)
-            PeriodLenth = NBLOCK_SMR_FIFO;
-        else
-            PeriodLenth =  atoi(argv[9]) * (ZONESZ / BLCKSZ);
-#ifdef CACHE_PROPORTIOIN_STATIC
-        Proportion_Dirty = atof(argv[10]);
-#endif // Proportion_Dirty
+//        if(atoi(argv[9]) < 0)
+//            PeriodLenth = NBLOCK_SMR_FIFO;
+//        else
+//            PeriodLenth =  atoi(argv[9]) * (ZONESZ / BLCKSZ);
+//#ifdef CACHE_PROPORTIOIN_STATIC
+//        Proportion_Dirty = atof(argv[10]);
+//#endif // Proportion_Dirty
 
         //EvictStrategy = PORE_PLUS;
     }
@@ -153,21 +153,11 @@ main(int argc, char** argv)
     {   /* If this is a MAIN process */
         initLog();
 
-        /* Open Device */
+        /* Cache Layer Device */
         ssd_fd = open(ssd_device, O_RDWR | O_DIRECT);
-    #ifndef SIMULATION
-        /* Real Device */
+        /* High Speed Disttibuted Storage Device */
         hdd_fd = open(smr_device, O_RDWR | O_DIRECT);
         printf("Device ID: hdd=%d, ssd=%d\n",hdd_fd,ssd_fd);
-    #else
-        /* Emulator */
-        fd_fifo_part = open(simu_smr_fifo_device, O_RDWR | O_DIRECT);
-        fd_smr_part = open(simu_smr_smr_device, O_RDWR | O_DIRECT | O_FSYNC);
-        printf("Simulator Device: fifo part=%d, smr part=%d\n",fd_fifo_part,fd_smr_part);
-        if(fd_fifo_part<0 || fd_smr_part<0)
-            exit(EXIT_FAILURE);
-        InitSimulator();
-    #endif
     }
     else
     {   /* If this is a HRC process */

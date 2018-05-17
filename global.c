@@ -31,8 +31,8 @@ blksize_t ZONESZ = 18 * 1024 * 1024;//18MB    // Unit: Byte.
 char simu_smr_fifo_device[] = "/dev/sdb1";
 char simu_smr_smr_device[] = "/dev/sdb2";
 char smr_device[] = "/dev/sdc";
-char ssd_device[] = "/dev/memdiska";//"/mnt/ramdisk/ramdisk";//"/dev/memdiska";// "/mnt/ssd/ssd";
-char ram_device[1024];
+char ssd_device[] = "/dev/memdiska";	/* As the cache service device */
+char ram_device[] = "/dev/ramdisk64M"; /* As the high speed distributed storage. */
 
 int BandOrBlock;
 
