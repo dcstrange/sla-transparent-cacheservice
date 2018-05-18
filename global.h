@@ -116,6 +116,7 @@ extern char simu_smr_smr_device[];
 extern char smr_device[];
 extern char ssd_clean_dev[];
 extern char ssd_dirty_dev[];
+
 extern char ram_device[1024];
 
 extern int BandOrBlock;
@@ -123,7 +124,7 @@ extern int BandOrBlock;
 /*Block = 0, Band=1*/
 extern int hdd_fd;
 extern int ssd_clean_fd;
-extern int ssd_dirty_dev_fd;
+extern int ssd_dirty_fd;
 extern int ram_fd;
 extern struct RuntimeSTAT* STT;
 

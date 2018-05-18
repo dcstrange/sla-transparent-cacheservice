@@ -38,13 +38,13 @@ int HashTab_Init()
     SSDBufHashBucket* freebucket = hashitem_freelist;
 
     size_t i = 0;
-    for(i = 0; i < NTABLE_CLEAN_CACHE; bucket++, i++)
+    for(i = 0; i < NTABLE_CLEAN_CACHE; bucket_clean++, i++)
     {
         bucket_clean->desp_serial_id = -1;
         bucket_clean->hash_key.offset = -1;
         bucket_clean->next_item = NULL;
     }
-    for(i = 0; i < NTABLE_DIRTY_CACHE; bucket++, i++)
+    for(i = 0; i < NTABLE_DIRTY_CACHE; bucket_dirty++, i++)
     {
         bucket_dirty->desp_serial_id = -1;
         bucket_dirty->hash_key.offset = -1;
@@ -65,19 +65,17 @@ SSDBufHashBucket * getSSDBufHashBucket(SSDBufTag ssd_buf_tag, int cache_type){
 
     unsigned long hashcode;
     SSDBufHashBucket * bucket;
-    if(type == 0){
+    if(cache_type == 0){
         hashcode = (ssd_buf_tag.offset / SSD_BUFFER_SIZE) % NTABLE_CLEAN_CACHE;
         bucket = hashtb_clean + hashcode;
+        return bucket;
     }
-    else if (type == 1){
+    else if (cache_type == 1){
         hashcode = (ssd_buf_tag.offset / SSD_BUFFER_SIZE) % NTABLE_DIRTY_CACHE;
         bucket = hashtb_dirty + hashcode;
+        return bucket;
     }
-    else
-    {
-         return NULL;
-    }
-    return bucket;
+    return NULL;
 }
 
 long HashTB_Lookup(SSDBufTag ssd_buf_tag, int cache_type)

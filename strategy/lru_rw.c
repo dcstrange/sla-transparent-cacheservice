@@ -32,25 +32,19 @@ int
 initSSDBufferFor_LRU_rw()
 {
     //STT->cacheLimit = Param1;
-    int stat = multi_SHM_lock_n_check("LOCK_SSDBUF_STRATEGY_LRU");
-    if(stat == 0)
-    {
-        strategy_desp = (StrategyDesp_LRU_private *)multi_SHM_alloc(SHM_SSDBUF_STRATEGY_DESP, sizeof(StrategyDesp_LRU_private) * NBLOCK_SSD_CACHE);
+
+        strategy_desp = (StrategyDesp_LRU_private *)multi_SHM_alloc(SHM_SSDBUF_STRATEGY_DESP, sizeof(StrategyDesp_LRU_private) * (NBLOCK_CLEAN_CACHE + NBLOCK_DIRTY_CACHE));
 
         StrategyDesp_LRU_private *ssd_buf_hdr_for_lru = strategy_desp;
         long i;
-        for (i = 0; i < NBLOCK_SSD_CACHE; ssd_buf_hdr_for_lru++, i++)
+        for (i = 0; i < (NBLOCK_CLEAN_CACHE + NBLOCK_DIRTY_CACHE); ssd_buf_hdr_for_lru++, i++)
         {
             ssd_buf_hdr_for_lru->serial_id = i;
             ssd_buf_hdr_for_lru->next_self_lru = -1;
             ssd_buf_hdr_for_lru->last_self_lru = -1;
             multi_SHM_mutex_init(&ssd_buf_hdr_for_lru->lock);
         }
-    }
-    else
-    {
-        strategy_desp = (StrategyDesp_LRU_private *)multi_SHM_get(SHM_SSDBUF_STRATEGY_DESP, sizeof(StrategyDesp_LRU_private) * NBLOCK_SSD_CACHE);
-    }
+
     multi_SHM_unlock("LOCK_SSDBUF_STRATEGY_LRU");
 
     lru_dirty_ctrl.first_self_lru = lru_clean_ctrl.first_self_lru = -1;
@@ -58,7 +52,15 @@ initSSDBufferFor_LRU_rw()
     lru_dirty_ctrl.count = lru_clean_ctrl.count = 0;
 
     StampGlobal = 0;
-    return stat;
+    return 0;
+}
+
+int
+Del_Buf_LRU_rw(long serial_id, int type)
+{
+    StrategyDesp_LRU_private * victim = strategy_desp + serial_id;
+    deleteFromLRU(victim);
+    return 1;
 }
 
 int

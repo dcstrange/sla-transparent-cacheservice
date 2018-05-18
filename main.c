@@ -143,8 +143,8 @@ main(int argc, char** argv)
         ssd_clean_fd = open(ssd_clean_dev, O_RDWR | O_DIRECT);
         ssd_dirty_fd = open(ssd_dirty_dev, O_RDWR | O_DIRECT);
         /* High Speed Disttibuted Storage Device */
-        hdd_fd = open(ram_device, O_RDWR | O_DIRECT);
-        printf("Device ID: hdd=%d, ssd=%d\n",hdd_fd,ssd_fd);
+        ram_fd = open(ram_device, O_RDWR | O_DIRECT);
+        printf("Device ID: ram=%d, ssd_clean=%d, ssd_dirty\n",ram_fd,ssd_clean_fd,ssd_dirty_fd);
     }
     else
     {   /* HRC processes to do*/
@@ -179,10 +179,10 @@ main(int argc, char** argv)
     IO_Listening(tracefile[TraceId], WriteOnly, StartLBA);
 
     /* Only MAIN to do */
-    close(hdd_fd);
-    close(ssd_fd);
+    close(ram_fd);
+    close(ssd_clean_fd);
+    close(ssd_dirty_fd);
     CloseLogFile();
-    ReportCM();
     wait(NULL);
     exit(EXIT_SUCCESS);
 }
