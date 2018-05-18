@@ -79,16 +79,10 @@ main(int argc, char** argv)
 // 1 4 0 0 500000 106230 5242880 LRU 0
 
 // trace11: 0 0 11 1 0 8000000 30 PV3
-    if (argc == 4)
+    if (argc == 5)
     {
- //       UserId = atoi(argv[1]);
- //       TraceId = atoi(argv[2]);
- //       WriteOnly = atoi(argv[3]);
- //       StartLBA = atol(argv[4]);
-
-         NBLOCK_MAX_CACHE_SIZE = atol(argv[1]);
-         NBLOCK_SSD_CACHE = NTABLE_SSD_CACHE = atol(argv[2]);
-//        NBLOCK_SMR_FIFO = atol(argv[7]) * (ZONESZ / BLCKSZ);
+        NBLOCK_MAX_CACHE_SIZE = atol(argv[1]);
+        NBLOCK_CLEAN_CACHE = NBLOCK_DIRTY_CACHE = atol(argv[2]);
 
         if (strcmp(argv[3],"LRU") == 0)
             EvictStrategy = LRU_private;
@@ -102,16 +96,8 @@ main(int argc, char** argv)
             EvictStrategy = MOST;
         else if(strcmp(argv[3],"MOST_RW") == 0)
             EvictStrategy = MOST_RW;
-
-//        if(atoi(argv[9]) < 0)
-//            PeriodLenth = NBLOCK_SMR_FIFO;
-//        else
-//            PeriodLenth =  atoi(argv[9]) * (ZONESZ / BLCKSZ);
-//#ifdef CACHE_PROPORTIOIN_STATIC
-//        Proportion_Dirty = atof(argv[10]);
-//#endif // Proportion_Dirty
-
-        //EvictStrategy = PORE_PLUS;
+        TraceId = atoi(argv[4]);
+        EvictStrategy = LRU_rw;
     }
     else
     {
@@ -150,25 +136,30 @@ main(int argc, char** argv)
 #endif // HRC_PROCS_N
 
     if(!I_AM_HRC_PROC)
-    {   /* If this is a MAIN process */
+    {   /* MAIN process to do*/
         initLog();
 
         /* Cache Layer Device */
-        ssd_fd = open(ssd_device, O_RDWR | O_DIRECT);
+        ssd_clean_fd = open(ssd_clean_dev, O_RDWR | O_DIRECT);
+        ssd_dirty_fd = open(ssd_dirty_dev, O_RDWR | O_DIRECT);
         /* High Speed Disttibuted Storage Device */
-        hdd_fd = open(smr_device, O_RDWR | O_DIRECT);
+        hdd_fd = open(ram_device, O_RDWR | O_DIRECT);
         printf("Device ID: hdd=%d, ssd=%d\n",hdd_fd,ssd_fd);
     }
     else
-    {   /* If this is a HRC process */
+    {   /* HRC processes to do*/
         #ifdef HRC_PROCS_N
-        NBLOCK_SSD_CACHE = NTABLE_SSD_CACHE = NBLOCK_MAX_CACHE_SIZE / HRC_PROCS_N * Fork_Pid;
+        NBLOCK_CLEAN_CACHE
+        = NTABLE_CLEAN_CACHE
+        = NBLOCK_CLEAN_CACHE
+        = NTABLE_CLEAN_CACHE
+        = NBLOCK_MAX_CACHE_SIZE / HRC_PROCS_N * Fork_Pid;
         #endif // HRC_PROCS_N
     }
 
 
     initRuntimeInfo();
-    STT->trace_req_amount = trace_req_total[TraceId];
+    //STT->trace_req_amount = trace_req_total[TraceId];
     CacheLayer_Init();
 
 
@@ -183,12 +174,11 @@ main(int argc, char** argv)
 //    }
 //#endif // DAEMON
 
+    WriteOnly = 1;
+    StartLBA = 0;
+    IO_Listening(tracefile[TraceId], WriteOnly, StartLBA);
 
-    trace_to_iocall(tracefile[TraceId],WriteOnly,StartLBA);
-
-#ifdef SIMULATION
-    PrintSimulatorStatistic();
-#endif
+    /* Only MAIN to do */
     close(hdd_fd);
     close(ssd_fd);
     CloseLogFile();
@@ -222,7 +212,7 @@ int initRuntimeInfo()
 int initLog()
 {
     char logpath[50];
-    sprintf(logpath,"%s/20180317-RWcost.log",PATH_LOG,TraceId);
+    sprintf(logpath,"%s/bw-limited.log",PATH_LOG,TraceId);
     int rt = 0;
     if((rt = OpenLogFile(logpath)) < 0)
     {

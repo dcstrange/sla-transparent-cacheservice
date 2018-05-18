@@ -35,7 +35,7 @@ extern int IsHit;
 char logbuf[512];
 
 void
-trace_to_iocall(char *trace_file_path, int isWriteOnly,off_t startLBA)
+IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
 {
     if(I_AM_HRC_PROC)
     {

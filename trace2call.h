@@ -10,5 +10,5 @@
 
 #endif // TRACETOCALL
 
-extern void trace_to_iocall(char *trace_file_path, int isWriteOnly, off_t startLBA);
+extern void IO_Listening(char *trace_file_path, int isWriteOnly, off_t startLBA);
 extern int BandOrBlock;

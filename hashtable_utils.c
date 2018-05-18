@@ -6,55 +6,86 @@
 #include "global.h"
 #include "mcheck.h"
 
-#define GetSSDBufHashBucket(hash_code) ((SSDBufHashBucket *) (ssd_buf_hashtable + (unsigned) (hash_code)))
 #define isSameTag(tag1,tag2) (tag1.offset == tag2.offset)
 extern void _LOCK(pthread_mutex_t* lock);
 extern void _UNLOCK(pthread_mutex_t* lock);
 
-SSDBufHashBucket* ssd_buf_hashtable;
+SSDBufHashBucket* hashtb_clean;
+SSDBufHashBucket* hashtb_dirty;
 
 static SSDBufHashBucket* hashitem_freelist;
 static SSDBufHashBucket* topfree_ptr;
 static SSDBufHashBucket* buckect_alloc();
 
 static long insertCnt,deleteCnt;
+static SSDBufHashBucket * getSSDBufHashBucket(SSDBufTag ssd_buf_tag, int cache_type);
 
 static void freebucket(SSDBufHashBucket* bucket);
 int HashTab_Init()
 {
     insertCnt = deleteCnt = 0;
-    ssd_buf_hashtable = (SSDBufHashBucket*)malloc(sizeof(SSDBufHashBucket)*NTABLE_SSD_CACHE);
-    hashitem_freelist = (SSDBufHashBucket*)malloc(sizeof(SSDBufHashBucket)*NTABLE_SSD_CACHE);
+    hashtb_clean = (SSDBufHashBucket*)malloc(sizeof(SSDBufHashBucket)*NTABLE_CLEAN_CACHE);
+    hashtb_dirty = (SSDBufHashBucket*)malloc(sizeof(SSDBufHashBucket)*NTABLE_DIRTY_CACHE);
+
+    hashitem_freelist = (SSDBufHashBucket*)malloc(sizeof(SSDBufHashBucket)*(NTABLE_CLEAN_CACHE + NTABLE_DIRTY_CACHE));
     topfree_ptr = hashitem_freelist;
 
-    if(ssd_buf_hashtable == NULL || hashitem_freelist == NULL)
+    if(hashtb_clean == NULL || hashtb_dirty == NULL || hashitem_freelist == NULL)
         return -1;
 
-    SSDBufHashBucket* bucket = ssd_buf_hashtable;
+    SSDBufHashBucket* bucket_clean = hashtb_clean;
+    SSDBufHashBucket* bucket_dirty = hashtb_dirty;
     SSDBufHashBucket* freebucket = hashitem_freelist;
+
     size_t i = 0;
-    for(i = 0; i < NBLOCK_SSD_CACHE; bucket++, freebucket++, i++)
+    for(i = 0; i < NTABLE_CLEAN_CACHE; bucket++, i++)
     {
-        bucket->desp_serial_id = freebucket->desp_serial_id = -1;
-        bucket->hash_key.offset = freebucket->hash_key.offset = -1;
-        bucket->next_item = NULL;
+        bucket_clean->desp_serial_id = -1;
+        bucket_clean->hash_key.offset = -1;
+        bucket_clean->next_item = NULL;
+    }
+    for(i = 0; i < NTABLE_DIRTY_CACHE; bucket++, i++)
+    {
+        bucket_dirty->desp_serial_id = -1;
+        bucket_dirty->hash_key.offset = -1;
+        bucket_dirty->next_item = NULL;
+    }
+    for(i = 0; i < NTABLE_CLEAN_CACHE + NTABLE_DIRTY_CACHE; freebucket ++, i++)
+    {
+        freebucket->desp_serial_id = -1;
+        freebucket->hash_key.offset = -1;
         freebucket->next_item = freebucket + 1;
     }
-    hashitem_freelist[NBLOCK_SSD_CACHE - 1].next_item = NULL;
+    freebucket[NTABLE_CLEAN_CACHE + NTABLE_DIRTY_CACHE - 1].next_item = NULL;
     return 0;
 }
 
-unsigned long HashTab_GetHashCode(SSDBufTag ssd_buf_tag)
-{
-    unsigned long hashcode = (ssd_buf_tag.offset / SSD_BUFFER_SIZE) % NTABLE_SSD_CACHE;
-    return hashcode;
+static
+SSDBufHashBucket * getSSDBufHashBucket(SSDBufTag ssd_buf_tag, int cache_type){
+
+    unsigned long hashcode;
+    SSDBufHashBucket * bucket;
+    if(type == 0){
+        hashcode = (ssd_buf_tag.offset / SSD_BUFFER_SIZE) % NTABLE_CLEAN_CACHE;
+        bucket = hashtb_clean + hashcode;
+    }
+    else if (type == 1){
+        hashcode = (ssd_buf_tag.offset / SSD_BUFFER_SIZE) % NTABLE_DIRTY_CACHE;
+        bucket = hashtb_dirty + hashcode;
+    }
+    else
+    {
+         return NULL;
+    }
+    return bucket;
 }
 
-long HashTab_Lookup(SSDBufTag ssd_buf_tag, unsigned long hash_code)
+long HashTB_Lookup(SSDBufTag ssd_buf_tag, int cache_type)
 {
     if (DEBUG)
         printf("[INFO] Lookup ssd_buf_tag: %lu\n",ssd_buf_tag.offset);
-    SSDBufHashBucket *nowbucket = GetSSDBufHashBucket(hash_code);
+
+    SSDBufHashBucket *nowbucket = getSSDBufHashBucket(ssd_buf_tag,cache_type);
     while (nowbucket != NULL)
     {
         if (isSameTag(nowbucket->hash_key, ssd_buf_tag))
@@ -67,7 +98,7 @@ long HashTab_Lookup(SSDBufTag ssd_buf_tag, unsigned long hash_code)
     return -1;
 }
 
-long HashTab_Insert(SSDBufTag ssd_buf_tag, unsigned long hash_code, long desp_serial_id)
+long HashTab_Insert(SSDBufTag ssd_buf_tag, int cache_type, long desp_serial_id)
 {
     if (DEBUG)
         printf("[INFO] Insert buf_tag: %lu\n",ssd_buf_tag.offset);
@@ -75,7 +106,7 @@ long HashTab_Insert(SSDBufTag ssd_buf_tag, unsigned long hash_code, long desp_se
     insertCnt++;
     //printf("hashitem alloc times:%d\n",insertCnt);
 
-    SSDBufHashBucket *nowbucket = GetSSDBufHashBucket(hash_code);
+    SSDBufHashBucket *nowbucket = getSSDBufHashBucket(ssd_buf_tag, cache_type);
     if(nowbucket == NULL)
     {
         printf("[ERROR] Insert HashBucket: Cannot get HashBucket.\n");
@@ -100,7 +131,7 @@ long HashTab_Insert(SSDBufTag ssd_buf_tag, unsigned long hash_code, long desp_se
     return 0;
 }
 
-long HashTab_Delete(SSDBufTag ssd_buf_tag, unsigned long hash_code)
+long HashTab_Delete(SSDBufTag ssd_buf_tag, int cache_type)
 {
     if (DEBUG)
         printf("[INFO] Delete buf_tag: %lu\n",ssd_buf_tag.offset);
@@ -110,7 +141,7 @@ long HashTab_Delete(SSDBufTag ssd_buf_tag, unsigned long hash_code)
 
     long del_id;
     SSDBufHashBucket *delitem;
-    SSDBufHashBucket *nowbucket = GetSSDBufHashBucket(hash_code);
+    SSDBufHashBucket *nowbucket = getSSDBufHashBucket(ssd_buf_tag, cache_type);
 
     while (nowbucket->next_item != NULL)
     {

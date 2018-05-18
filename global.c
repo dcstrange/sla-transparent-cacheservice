@@ -15,8 +15,9 @@ unsigned long Param2;
 
 /** All users basic setup **/           /** NEED TO BE '#DEFINE' **/
 blksize_t NBLOCK_MAX_CACHE_SIZE;
-blksize_t NBLOCK_SSD_CACHE;
-blksize_t NTABLE_SSD_CACHE;
+blksize_t NBLOCK_CLEAN_CACHE, NBLOCK_DIRTY_CACHE;
+blksize_t NTABLE_CLEAN_CACHE, NTABLE_DIRTY_CACHE;
+
 blksize_t SSD_BUFFER_SIZE = 4096;
 blksize_t NBLOCK_SMR_FIFO;
 //blksize_t NSMRBlocks = 2621952;		// 2621952*8KB~20GB
@@ -31,14 +32,19 @@ blksize_t ZONESZ = 18 * 1024 * 1024;//18MB    // Unit: Byte.
 char simu_smr_fifo_device[] = "/dev/sdb1";
 char simu_smr_smr_device[] = "/dev/sdb2";
 char smr_device[] = "/dev/sdc";
-char ssd_device[] = "/dev/memdiska";	/* As the cache service device */
+
+/* As the cache service device */
+char ssd_clean_dev[] = "/dev/memdiska1";
+char ssd_dirty_dev[] = "/dev/memdiska2";
+
 char ram_device[] = "/dev/ramdisk64M"; /* As the high speed distributed storage. */
 
 int BandOrBlock;
 
 /*Block = 0, Band=1*/
 int hdd_fd;
-int ssd_fd;
+int ssd_clean_fd;
+int ssd_dirty_fd;
 int ram_fd;
 struct RuntimeSTAT* STT;
 

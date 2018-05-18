@@ -97,8 +97,8 @@ extern int BatchSize;
 extern long PeriodLenth;
 /** All users basic setup **/
 extern blksize_t NBLOCK_MAX_CACHE_SIZE;
-extern blkcnt_t NBLOCK_SSD_CACHE;
-extern blkcnt_t NTABLE_SSD_CACHE;
+extern blksize_t NBLOCK_CLEAN_CACHE, NBLOCK_DIRTY_CACHE;
+extern blksize_t NTABLE_CLEAN_CACHE, NTABLE_DIRTY_CACHE;
 extern blkcnt_t SSD_BUFFER_SIZE;
 extern blkcnt_t NBLOCK_SMR_FIFO;
 //extern blkcnt_t NSMRBands;		// 194180*(18MB+36MB)/2~5TB
@@ -114,14 +114,16 @@ extern  blksize_t ZONESZ;
 extern char simu_smr_fifo_device[];
 extern char simu_smr_smr_device[];
 extern char smr_device[];
-extern char ssd_device[];
+extern char ssd_clean_dev[];
+extern char ssd_dirty_dev[];
 extern char ram_device[1024];
 
 extern int BandOrBlock;
 
 /*Block = 0, Band=1*/
 extern int hdd_fd;
-extern int ssd_fd;
+extern int ssd_clean_fd;
+extern int ssd_dirty_dev_fd;
 extern int ram_fd;
 extern struct RuntimeSTAT* STT;
 

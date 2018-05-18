@@ -17,8 +17,8 @@
 
 #include "costmodel.h"
 
-SSDBufDespCtrl*     ssd_buf_desp_ctrl;
-SSDBufDesp*         ssd_buf_desps;
+SSDBufDespCtrl  * DespCtrl_Clean,   * DespCtrl_Dirty;//ssd_buf_desp_ctrl;
+SSDBufDesp      * Desps_Clean,      * Desps_Dirty;
 
 /* If Defined R/W Cache Space Static Allocated */
 double Proportion_Dirty;
@@ -28,8 +28,8 @@ static int          init_SSDDescriptorBuffer();
 static int          init_StatisticObj();
 static void         flushSSDBuffer(SSDBufDesp * ssd_buf_hdr);
 static SSDBufDesp*  allocSSDBuf(SSDBufTag ssd_buf_tag, bool * found, int alloc4What, int * isCallBack);
-static SSDBufDesp*  pop_freebuf();
-static int          push_freebuf(SSDBufDesp* freeDesp);
+static SSDBufDesp*  pop_freebuf(int cache_type);
+static int          push_freebuf(SSDBufDesp* freeDesp, int cache_type);
 
 static int          initStrategySSDBuffer();
 static long         Strategy_Desp_LogOut();
@@ -99,16 +99,19 @@ init_SSDDescriptorBuffer()
     int stat = multi_SHM_lock_n_check("LOCK_SSDBUF_DESP");
     if(stat == 0)
     {
-        ssd_buf_desp_ctrl = (SSDBufDespCtrl*)multi_SHM_alloc(SHM_SSDBUF_DESP_CTRL,sizeof(SSDBufDespCtrl));
-        ssd_buf_desps = (SSDBufDesp *)multi_SHM_alloc(SHM_SSDBUF_DESPS,sizeof(SSDBufDesp) * NBLOCK_SSD_CACHE);
+        DespCtrl_Clean = (SSDBufDespCtrl*)multi_SHM_alloc(SHM_SSDBUF_DESP_CTRL,sizeof(SSDBufDespCtrl));
+        DespCtrl_Dirty = (SSDBufDespCtrl*)multi_SHM_alloc(SHM_SSDBUF_DESP_CTRL,sizeof(SSDBufDespCtrl));
 
-        ssd_buf_desp_ctrl->n_usedssd = 0;
-        ssd_buf_desp_ctrl->first_freessd = 0;
-        multi_SHM_mutex_init(&ssd_buf_desp_ctrl->lock);
+        Desps_Clean = (SSDBufDesp *)multi_SHM_alloc(SHM_SSDBUF_DESPS,sizeof(SSDBufDesp) * NBLOCK_CLEAN_CACHE);
+        Desps_Dirty = (SSDBufDesp *)multi_SHM_alloc(SHM_SSDBUF_DESPS,sizeof(SSDBufDesp) * NBLOCK_DIRTY_CACHE);
+        DespCtrl_Clean->n_usedssd = DespCtrl_Dirty->n_usedssd = 0;
+        DespCtrl_Clean->first_freessd = DespCtrl_Dirty->first_freessd = 0;
+        // multi_SHM_mutex_init(&DespCtrl_Clean->lock);
+        // multi_SHM_mutex_init(&Desps_Dirty->lock);
 
         long i;
-        SSDBufDesp  *ssd_buf_hdr = ssd_buf_desps;
-        for (i = 0; i < NBLOCK_SSD_CACHE; ssd_buf_hdr++, i++)
+        SSDBufDesp  *ssd_buf_hdr = Desps_Clean;
+        for (i = 0; i < NBLOCK_CLEAN_CACHE; ssd_buf_hdr++, i++)
         {
             ssd_buf_hdr->serial_id = i;
             ssd_buf_hdr->ssd_buf_id = i;
@@ -116,7 +119,18 @@ init_SSDDescriptorBuffer()
             ssd_buf_hdr->next_freessd = i + 1;
             multi_SHM_mutex_init(&ssd_buf_hdr->lock);
         }
-        ssd_buf_desps[NBLOCK_SSD_CACHE - 1].next_freessd = -1;
+        ssd_buf_desps[NBLOCK_CLEAN_CACHE - 1].next_freessd = -1;
+
+        ssd_buf_hdr = Desps_Dirty;
+        for (i = 0; i < NBLOCK_DIRTY_CACHE; ssd_buf_hdr++, i++)
+        {
+            ssd_buf_hdr->serial_id = i;
+            ssd_buf_hdr->ssd_buf_id = i;
+            ssd_buf_hdr->ssd_buf_flag = 0;
+            ssd_buf_hdr->next_freessd = i + 1;
+            multi_SHM_mutex_init(&ssd_buf_hdr->lock);
+        }
+        ssd_buf_desps[NBLOCK_DIRTY_CACHE - 1].next_freessd = -1;
     }
     else
     {
@@ -165,7 +179,7 @@ flushSSDBuffer(SSDBufDesp * ssd_buf_hdr)
         return;
     }
 
-    dev_pread(ssd_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
+    dev_pread(ssd_dirty_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
     msec_r_ssd = TimerInterval_MICRO(&tv_start,&tv_stop);
     STT->time_read_ssd += Mirco2Sec(msec_r_ssd);
     STT->load_ssd_blocks++;
@@ -220,21 +234,28 @@ static void flagOp(SSDBufDesp * ssd_buf_hdr, int opType)
 
 }
 
-static SSDBufDesp*
-allocSSDBuf(SSDBufTag ssd_buf_tag, bool * found, int alloc4What, int * isCallBack)
+static void *
+allocSSDBuf(SSDBufTag ssd_buf_tag, int alloc4What, bool * found, int * cache_type, long * despId)
 {
 
     unsigned flag = (alloc4What == 0) ? 0 : SSD_BUF_DIRTY;
     /* Lookup if already cached. */
     SSDBufDesp      *ssd_buf_hdr; //returned value.
-    unsigned long   ssd_buf_hash = HashTab_GetHashCode(ssd_buf_tag);
-    long            ssd_buf_id = HashTab_Lookup(ssd_buf_tag, ssd_buf_hash);
+
+    long  despId_inClean = HashTB_Lookup(ssd_buf_tag, 0);
+    long  despId_inDirty = HashTB_Lookup(ssd_buf_tag, 1);
 
     /* Cache HIT IN */
-    if (ssd_buf_id >= 0)
+    if (despId_inClean >= 0 || despId_inDirty >= 0)
     {
+        #ifdef DEBUG
+            if(despId_inClean >= 0 && despId_inDirty >= 0){
+                perror("the block is duplicated in both type cache");
+                exit(EXIT_FAILURE);
+            }
+        #endif // DEBUG
+
         ssd_buf_hdr = &ssd_buf_desps[ssd_buf_id];
-        _LOCK(&ssd_buf_hdr->lock);
 
         /* count wt_hit_rd and rd_hit_wt */
         if (alloc4What == 0 && IsDirty(ssd_buf_hdr->ssd_buf_flag))
@@ -253,19 +274,9 @@ allocSSDBuf(SSDBufTag ssd_buf_tag, bool * found, int alloc4What, int * isCallBac
         *found = 1;
 
         return ssd_buf_hdr;
-//        }
-//        else
-//        {
-//            _UNLOCK(&ssd_buf_hdr->lock);
-//            /** passive delete hash item, which corresponding cache buf has been evicted early **/
-//            HashTab_Delete(ssd_buf_tag,ssd_buf_hash);
-//            STT->hashmiss_sum++;
-//            if(alloc4What == 1)	// alloc for write
-//                STT->hashmiss_write++;
-//            else		//alloc for read
-//                STT->hashmiss_read++;
-//        }
     }
+
+
 
     /* Cache MISS */
 //    if(STT->flush_hdd_blocks + STT->flush_clean_blocks > NBLOCK_SSD_CACHE)
@@ -274,26 +285,6 @@ allocSSDBuf(SSDBufTag ssd_buf_tag, bool * found, int alloc4What, int * isCallBac
 //        CM_CHOOSE(token);
 //    }
     *found = 0;
-    *isCallBack = CM_TryCallBack(ssd_buf_tag);
-#ifdef CACHE_PROPORTIOIN_STATIC
-#ifdef NO_READ_CACHE
-    if(alloc4What == 0)
-    {
-        static char read_buf[8192];
-        return read_buf;
-    }
-#endif
-    if (STT->incache_n_clean >= Max_Clean_Cache)
-    {
-        flag = 0;
-        goto FLAG_CACHEOUT;
-    }
-    else if (STT->incache_n_dirty >= Max_Dirty_Cache)
-    {
-        flag = SSD_BUF_DIRTY;
-        goto FLAG_CACHEOUT;
-    }
-#endif // CACHE_PROPORTIOIN_STATIC
 
 //    _LOCK(&ssd_buf_desp_ctrl->lock);
     ssd_buf_hdr = pop_freebuf();
@@ -603,42 +594,40 @@ read_block(off_t offset, char *ssd_buffer)
 void
 write_block(off_t offset, char *ssd_buffer)
 {
-#ifdef NO_CACHE
-#ifdef SIMULATION
-    dev_simu_write(ssd_buffer, BLCKSZ, offset);
-#else
-    dev_pwrite(hdd_fd, ssd_buffer, BLCKSZ, offset);
-#endif // SIMULATION
-    //IO by no cache.
-
-    msec_w_hdd = TimerInterval_MICRO(&tv_start,&tv_stop);
-    STT->time_write_hdd += Mirco2Sec(msec_w_hdd);
-    STT->flush_hdd_blocks++;
-    return;
-#else
-
-    _TimerLap(&tv_cmstop);
-    bool	found;
-    int isCallBack;
+    static SSDBufDesp* ssd_buf_hdr;
     static SSDBufTag ssd_buf_tag;
-    static SSDBufDesp   *ssd_buf_hdr;
-
     ssd_buf_tag.offset = offset;
-    ssd_buf_hdr = allocSSDBuf(ssd_buf_tag, &found, 1, &isCallBack);
+    long despId;
 
-    //if(!found && isCallBack)
-    if(!found)
+    if(check_hit(ssd_buf_tag, 1, &despId))
     {
-        /* ----- Cost Model Reg------------- */
-        _TimerLap(&tv_cmstop);
-        microsecond_t miss_usetime = TimerInterval_MICRO(&tv_cmstart, &tv_cmstop);
-        CM_T_hitmiss_Reg(miss_usetime);
-        /* ------------------ */
+        /* Cache Hitin */
+        STT->hitnum_w += IsHit;
+        ssd_buf_hdr = Desps_Dirty + despId;
+    }
+    else if (check_hit(ssd_buf_tag, 0, &despId))
+    {
+        /* write hitin read */
+        ssd_buf_hdr = Desps_Clean + despId;
+        HashTab_Delete(ssd_buf_tag, 0);
+        push_freebuf(ssd_buf_hdr);
+        STT->incache_n_clean -- ;
+
+    }
+    else
+    {
+        /* Cache Miss */
+
     }
 
 
-    IsHit = found;
-    STT->hitnum_w += IsHit;
+
+    bool	found;
+    int isCallBack;
+
+    ssd_buf_hdr = allocSSDBuf(ssd_buf_tag, &found, 1, &isCallBack);
+
+    //if(!found && isCallBack)
 
     dev_pwrite(ssd_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
     msec_w_ssd = TimerInterval_MICRO(&tv_start,&tv_stop);
@@ -646,9 +635,6 @@ write_block(off_t offset, char *ssd_buffer)
     STT->flush_ssd_blocks++ ;
 
     _UNLOCK(&ssd_buf_hdr->lock);
-#endif // NO_CAHCE
-
-
 }
 
 /******************
@@ -720,8 +706,9 @@ static int dev_simu_read(void* buf,size_t nbytes,off_t offset)
 }
 
 static SSDBufDesp*
-pop_freebuf()
+pop_freebuf(int cache_type)
 {
+    SSDBufDespCtrl * desp_ctrl = (cache_type == 0) ? DespCtrl_Clean : DespCtrl_Dirty;
     if(ssd_buf_desp_ctrl->first_freessd < 0)
         return NULL;
     SSDBufDesp* ssd_buf_hdr = &ssd_buf_desps[ssd_buf_desp_ctrl->first_freessd];
@@ -730,12 +717,15 @@ pop_freebuf()
     ssd_buf_desp_ctrl->n_usedssd++;
     return ssd_buf_hdr;
 }
+
 static int
-push_freebuf(SSDBufDesp* freeDesp)
+push_freebuf(SSDBufDesp* freeDesp, int cache_type)
 {
-    freeDesp->next_freessd = ssd_buf_desp_ctrl->first_freessd;
-    ssd_buf_desp_ctrl->first_freessd = freeDesp->serial_id;
-    return ssd_buf_desp_ctrl->first_freessd;
+    SSDBufDespCtrl * desp_ctrl = (cache_type == 0) ? DespCtrl_Clean : DespCtrl_Dirty;
+    freeDesp->ssd_buf_flag &= ~(SSD_BUF_VALID | SSD_BUF_DIRTY);
+    freeDesp->next_freessd = desp_ctrl->first_freessd;
+    desp_ctrl->first_freessd = freeDesp->serial_id;
+    return desp_ctrl->first_freessd;
 }
 
 void
@@ -753,3 +743,12 @@ _UNLOCK(pthread_mutex_t* lock)
     SHM_mutex_unlock(lock);
 #endif // MULTIUSER
 }
+
+
+/* cache_type: 0 for clean, 1 for dirty */
+long rw_map(int cache_type, long desp_id)
+{
+    return cache_type * NBLOCK_CLEAN_CACHE + desp_id;
+}
+
+
