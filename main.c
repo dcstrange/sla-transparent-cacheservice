@@ -79,24 +79,12 @@ main(int argc, char** argv)
 // 1 4 0 0 500000 106230 5242880 LRU 0
 
 // trace11: 0 0 11 1 0 8000000 30 PV3
-    if (argc == 5)
+    if (argc == 4)
     {
         NBLOCK_MAX_CACHE_SIZE = atol(argv[1]);
-        NBLOCK_CLEAN_CACHE = NBLOCK_DIRTY_CACHE = atol(argv[2]);
+        NBLOCK_CLEAN_CACHE = NBLOCK_DIRTY_CACHE = NTABLE_CLEAN_CACHE = NTABLE_DIRTY_CACHE = atol(argv[2]);
 
-        if (strcmp(argv[3],"LRU") == 0)
-            EvictStrategy = LRU_private;
-         else if (strcmp(argv[3],"LRU_RW") == 0)
-            EvictStrategy = LRU_rw;
-        else if (strcmp(argv[3],"PV3") == 0)
-            EvictStrategy = PV3;
-        else if (strcmp(argv[3],"PORE") == 0)
-            EvictStrategy = PORE;
-        else if(strcmp(argv[3],"MOST") == 0)
-            EvictStrategy = MOST;
-        else if(strcmp(argv[3],"MOST_RW") == 0)
-            EvictStrategy = MOST_RW;
-        TraceId = atoi(argv[4]);
+        TraceId = atoi(argv[3]);
         EvictStrategy = LRU_rw;
     }
     else
@@ -143,8 +131,12 @@ main(int argc, char** argv)
         ssd_clean_fd = open(ssd_clean_dev, O_RDWR | O_DIRECT);
         ssd_dirty_fd = open(ssd_dirty_dev, O_RDWR | O_DIRECT);
         /* High Speed Disttibuted Storage Device */
-        ram_fd = open(ram_device, O_RDWR | O_DIRECT);
-        printf("Device ID: ram=%d, ssd_clean=%d, ssd_dirty\n",ram_fd,ssd_clean_fd,ssd_dirty_fd);
+        ram_fd = open(ram_device, O_RDWR);
+        if(ram_fd < 0){
+		perror("opern ramdisk error.");
+		exit(-1);
+	}
+        printf("Device ID: ram=%d, ssd_clean=%d, ssd_dirty=%d\n",ram_fd,ssd_clean_fd,ssd_dirty_fd);
     }
     else
     {   /* HRC processes to do*/
@@ -174,7 +166,7 @@ main(int argc, char** argv)
 //    }
 //#endif // DAEMON
 
-    WriteOnly = 1;
+    WriteOnly = 0;
     StartLBA = 0;
     IO_Listening(tracefile[TraceId], WriteOnly, StartLBA);
 

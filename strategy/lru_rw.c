@@ -129,6 +129,9 @@ hitInBuffer_LRU_rw(long serial_id, unsigned flag)
 int
 insertBuffer_LRU_rw(long serial_id, unsigned flag)
 {
+    if(IsDirty(flag) && serial_id < NBLOCK_CLEAN_CACHE)
+        perror("error");
+
     //strategy_desp[serial_id].user_id = UserId;
     StrategyDesp_LRU_private * desp = strategy_desp + serial_id;
     addToLRUHead(desp, flag);
@@ -142,6 +145,8 @@ addToLRUHead(StrategyDesp_LRU_private* ssd_buf_hdr_for_lru, unsigned flag)
     //deal with self LRU queue
     if (IsDirty(flag))
     {
+        if(ssd_buf_hdr_for_lru->serial_id < NBLOCK_CLEAN_CACHE)
+            perror("mark error");
         if(lru_dirty_ctrl.first_self_lru < 0)
         {   // empty
             lru_dirty_ctrl.first_self_lru = ssd_buf_hdr_for_lru->serial_id;
@@ -189,8 +194,9 @@ deleteFromLRU(StrategyDesp_LRU_private * ssd_buf_hdr_for_lru)
             lru_clean_ctrl.first_self_lru = ssd_buf_hdr_for_lru->next_self_lru;
         else if (lru_dirty_ctrl.first_self_lru == ssd_buf_hdr_for_lru->serial_id)
             lru_dirty_ctrl.first_self_lru = ssd_buf_hdr_for_lru->next_self_lru;
-        else
-            exit(-1);
+        else{
+            /* do nothing */
+        }
     }
 
     if(ssd_buf_hdr_for_lru->next_self_lru >= 0)
@@ -204,7 +210,9 @@ deleteFromLRU(StrategyDesp_LRU_private * ssd_buf_hdr_for_lru)
         else if (lru_dirty_ctrl.last_self_lru == ssd_buf_hdr_for_lru->serial_id)
             lru_dirty_ctrl.last_self_lru = ssd_buf_hdr_for_lru->last_self_lru;
         else
-            exit(-1);
+        {
+            /* do nothing */
+        }
     }
 
     ssd_buf_hdr_for_lru->last_self_lru = ssd_buf_hdr_for_lru->next_self_lru = -1;

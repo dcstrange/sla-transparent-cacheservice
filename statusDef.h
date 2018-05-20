@@ -31,8 +31,8 @@
 #undef T_SWITCHER_ON
 
 /* Future Features */
-#undef HRC_PROCS_N 10
+#define HRC_PROCS_N 10
 #undef CG_THROTTLE     // CGroup throttle.
 #undef MULTIUSER
 
-#define DEBUG
+#define DEBUG 1

@@ -38,6 +38,9 @@ static int          initStrategySSDBuffer();
 static long         Strategy_Desp_LogOut();
 static int          Strategy_Desp_HitIn(SSDBufDesp* desp);
 static int         Strategy_Desp_LogIn(SSDBufDesp* desp);
+static long map_cache_to_strategy(int cache_type, long desp_id);
+static long map_strategy_to_cache(int cache_type, long desp_id);
+
 //#define isSamebuf(SSDBufTag tag1, SSDBufTag tag2) (tag1 == tag2)
 #define CopySSDBufTag(objectTag,sourceTag) (objectTag = sourceTag)
 #define IsDirty(flag) ( (flag & SSD_BUF_DIRTY) != 0 )
@@ -51,7 +54,6 @@ static int check_hit(SSDBufTag ssd_buf_tag, int cache_type, long * despId);
 static timeval tv_start, tv_stop;
 static timeval tv_bastart, tv_bastop;
 static timeval tv_cmstart, tv_cmstop;
-int IsHit;
 microsecond_t msec_r_hdd,msec_w_hdd,msec_r_ssd,msec_w_ssd,msec_bw_hdd=0;
 
 /* Device I/O operation with Timer */
@@ -227,12 +229,12 @@ static int check_hit(SSDBufTag ssd_buf_tag, int cache_type, long * despId)
     long id = HashTB_Lookup(ssd_buf_tag, cache_type);
     if(id >= 0)
     {
-        despId = id;
+        *(despId) = id;
         STT->hitnum_s++;
         return 1;
     }
 
-    despId = -1;
+    *(despId) = -1;
     return 0;
 }
 static SSDBufDesp *
@@ -257,22 +259,28 @@ allocSSDBuf(int cache_type, SSDBufTag ssd_buf_tag)
         while(k < n_evict)
         {
             long out_despId = buf_despid_array[k];
+            out_despId = map_strategy_to_cache(cache_type, out_despId);
             ssd_buf_hdr = &ssd_buf_desps[out_despId];
 
             freeSSDBuf(cache_type, ssd_buf_hdr);
             k++;
         }
         STT->cacheUsage -= k;
+        if(cache_type == 0)
+            STT->incache_n_clean -= k;
+        else
+            STT->incache_n_dirty -=k;
 
         ssd_buf_hdr = pop_freebuf(cache_type);
-
     }
 
     flagOp(ssd_buf_hdr,cache_type);
     CopySSDBufTag(ssd_buf_hdr->ssd_buf_tag,ssd_buf_tag);
 
     HashTab_Insert(ssd_buf_tag, cache_type, ssd_buf_hdr->serial_id);
-    Strategy_Desp_LogIn(ssd_buf_hdr);
+
+    long strategy_id = map_cache_to_strategy(cache_type, ssd_buf_hdr->serial_id);
+    insertBuffer_LRU_rw(strategy_id, ssd_buf_hdr->ssd_buf_flag);
     IsDirty(ssd_buf_hdr->ssd_buf_flag) ? STT->incache_n_dirty ++ : STT->incache_n_clean ++ ;
 
     return ssd_buf_hdr;
@@ -352,7 +360,9 @@ read_block(off_t offset, char *ssd_buffer)
 
         STT->hitnum_r++;
         STT->load_ssd_blocks++;
-        hitInBuffer_LRU_rw(despId, ssd_buf_hdr->ssd_buf_flag);
+
+        long strategy_id = map_cache_to_strategy(0, despId);
+        hitInBuffer_LRU_rw(strategy_id, ssd_buf_hdr->ssd_buf_flag);
 
         dev_pread(ssd_clean_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
         return;
@@ -364,10 +374,11 @@ read_block(off_t offset, char *ssd_buffer)
         /* read hitin write */
         STT->rd_hit_wt ++;
 
-        ssd_buf_hdr = DespCtrl_Dirty + despId;
+        ssd_buf_hdr = Desps_Dirty + despId;
         dev_pread(ssd_dirty_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
 
-        Del_Buf_LRU_rw(despId, 1);
+        long strategy_id = map_cache_to_strategy(1, despId);
+        Del_Buf_LRU_rw(strategy_id, 1);
         freeSSDBuf(1, ssd_buf_hdr);
     }
     else
@@ -376,8 +387,7 @@ read_block(off_t offset, char *ssd_buffer)
         STT->load_hdd_blocks++;
     }
 
-    despId = allocSSDBuf(0, ssd_buf_tag);
-    ssd_buf_hdr = DespCtrl_Clean + despId;
+    ssd_buf_hdr = allocSSDBuf(0, ssd_buf_tag);
 
     dev_pwrite(ssd_clean_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
     STT->flush_ssd_blocks++;
@@ -398,12 +408,13 @@ write_block(off_t offset, char *ssd_buffer)
     if(check_hit(ssd_buf_tag, 1, &despId))
     {
         /* Cache Hitin */
+        STT->hitnum_w ++;
 
         ssd_buf_hdr = Desps_Dirty + despId;
         dev_pwrite(ssd_dirty_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
 
-        hitInBuffer_LRU_rw(despId, ssd_buf_hdr->ssd_buf_flag);
-        STT->hitnum_w += IsHit;
+        long strategy_id = map_cache_to_strategy(1, despId);
+        hitInBuffer_LRU_rw(strategy_id, ssd_buf_hdr->ssd_buf_flag);
 
         return ;
     }
@@ -416,12 +427,13 @@ write_block(off_t offset, char *ssd_buffer)
 
         ssd_buf_hdr = Desps_Clean + despId;
 
-        Del_Buf_LRU_rw(despId, 0);
+        long strategy_id = map_cache_to_strategy(0, despId);
+        Del_Buf_LRU_rw(strategy_id, 0);
         freeSSDBuf(0, ssd_buf_hdr);
     }
 
-    despId = allocSSDBuf(0, ssd_buf_tag);
-    ssd_buf_hdr = Desps_Dirty + despId;
+    ssd_buf_hdr = allocSSDBuf(1, ssd_buf_tag);
+
     dev_pwrite(ssd_dirty_fd, ssd_buffer, SSD_BUFFER_SIZE, ssd_buf_hdr->ssd_buf_id * SSD_BUFFER_SIZE);
     return ;
 }
@@ -535,9 +547,12 @@ _UNLOCK(pthread_mutex_t* lock)
 
 
 /* cache_type: 0 for clean, 1 for dirty */
-long rw_map(int cache_type, long desp_id)
+static long map_cache_to_strategy(int cache_type, long desp_id)
 {
     return cache_type * NBLOCK_CLEAN_CACHE + desp_id;
 }
 
-
+static long map_strategy_to_cache(int cache_type, long desp_id)
+{
+    return desp_id - (cache_type * NBLOCK_CLEAN_CACHE) ;
+}

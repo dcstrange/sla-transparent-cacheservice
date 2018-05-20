@@ -117,7 +117,7 @@ extern char smr_device[];
 extern char ssd_clean_dev[];
 extern char ssd_dirty_dev[];
 
-extern char ram_device[1024];
+extern char ram_device[];
 
 extern int BandOrBlock;
 

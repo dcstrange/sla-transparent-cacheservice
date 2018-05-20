@@ -71,7 +71,7 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
     static int req_cnt = 0;
 
     blkcnt_t total_n_req = isWriteOnly ? 100000000 : 200000000;
-    blkcnt_t skiprows = isWriteOnly ? 50000000 : 100000000;
+    blkcnt_t skiprows = 0; //isWriteOnly ? 50000000 : 100000000;
 
     FILE *trace;
     if ((trace = fopen(trace_file_path, "rt")) == NULL)
@@ -80,7 +80,7 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
         exit(EXIT_FAILURE);
     }
 
-    while (!feof(trace) && STT->reqcnt_s < total_n_req) // 84340000
+    while (!feof(trace))//  && STT->reqcnt_s < total_n_req) // 84340000
     {
         returnCode = fscanf(trace, "%c %d %lu\n", &action, &i, &offset);
         if (returnCode < 0)
@@ -104,12 +104,12 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
 
         offset = (offset + startLBA) * BLCKSZ;
 
-        if(!isFullSSDcache && (STT->flush_clean_blocks + STT->flush_hdd_blocks) > 0)
-        {
-            reportCurInfo();
-            resetStatics();        // Because we do not care about the statistic while the process of filling SSD cache.
-            isFullSSDcache = 1;
-        }
+//        if(!isFullSSDcache && (STT->flush_clean_blocks + STT->flush_hdd_blocks) > 0)
+//        {
+//            reportCurInfo();
+//            resetStatics();        // Because we do not care about the statistic while the process of filling SSD cache.
+//            isFullSSDcache = 1;
+//        }
 #ifdef T_SWITCHER_ON
         static int tk = 1;
         if(tk && (STT->flush_clean_blocks + STT->flush_hdd_blocks) >= TS_StartSize)
