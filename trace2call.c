@@ -124,7 +124,7 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
         _TimerLap(&tv_req_start);
 #endif // TIMER_SINGLE_REQ
         sprintf(pipebuf,"%c,%lu\n",action,offset);
-        if (action == ACT_WRITE) // Write = 1
+        if (isWriteOnly && action == ACT_WRITE) // Write = 1
         {
             STT->reqcnt_w ++;
             STT->reqcnt_s ++;
@@ -150,11 +150,11 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
             }
             #endif // HRC_PROCS_N
         }
-        else if (action != ACT_READ)
-        {
-            printf("Trace file gets a wrong result: action = %c.\n",action);
-            exit(-1);
-        }
+//        else if (action != ACT_READ)
+//        {
+//            printf("Trace file gets a wrong result: action = %c.\n",action);
+//            exit(-1);
+//        }
 #ifdef LOG_SINGLE_REQ
         _TimerLap(&tv_req_stop);
         msec_req = TimerInterval_MICRO(&tv_req_start,&tv_req_stop);

@@ -56,7 +56,7 @@ int HashTab_Init()
         freebucket->hash_key.offset = -1;
         freebucket->next_item = freebucket + 1;
     }
-    freebucket[NTABLE_CLEAN_CACHE + NTABLE_DIRTY_CACHE - 1].next_item = NULL;
+    hashitem_freelist[NTABLE_CLEAN_CACHE + NTABLE_DIRTY_CACHE - 1].next_item = NULL;
     return 0;
 }
 
