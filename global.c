@@ -34,10 +34,10 @@ char simu_smr_smr_device[] = "/dev/sdb2";
 char smr_device[] = "/dev/sdc";
 
 /* As the cache service device */
-char ssd_clean_dev[] = "/dev/memdiska1";
-char ssd_dirty_dev[] = "/dev/memdiska2";
+char ssd_clean_dev[] = "/dev/sdb";
+char ssd_dirty_dev[] = "/dev/sdd";
 
-char ram_device[] = "/dev/ramdisk64M"; /* As the high speed distributed storage. */
+char ram_device[] = "/dev/sdc"; /* As the high speed distributed storage. */
 
 int BandOrBlock;
 
@@ -68,4 +68,6 @@ char* PATH_LOG = "/home/outputs/logs";
 #ifdef HRC_PROCS_N
 int PipeEnds_of_MAIN[HRC_PROCS_N];
 int PipeEnd_of_HRC;
+int read_fifo;
+int write_fifo;
 #endif

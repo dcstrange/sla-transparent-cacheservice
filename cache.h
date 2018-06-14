@@ -65,6 +65,9 @@ typedef enum enum_t_vict
     ENUM_B_Any
 } enum_t_vict;
 
+extern SSDBufDespCtrl  * DespCtrl_Clean,   * DespCtrl_Dirty;//ssd_buf_desp_ctrl;
+extern SSDBufDesp      * Desps_Clean,      * Desps_Dirty;
+
 extern int IsHit;
 extern microsecond_t msec_r_hdd,msec_w_hdd,msec_r_ssd,msec_w_ssd,msec_bw_hdd;
 
@@ -76,6 +79,8 @@ extern void write_band(off_t offset, char* ssd_buffer);
 //extern bool isSamebuf(SSDBufTag *, SSDBufTag *);
 extern int ResizeCacheUsage();
 extern void CopySSDBufTag(SSDBufTag* objectTag, SSDBufTag* sourceTag);
+extern long map_strategy_to_cache(int cache_type, long desp_id);
+extern void freeSSDBuf(int cache_type, SSDBufDesp* ssd_buf_hdr);
 
 extern void _LOCK(pthread_mutex_t* lock);
 extern void _UNLOCK(pthread_mutex_t* lock);

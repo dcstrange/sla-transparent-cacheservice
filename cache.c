@@ -29,7 +29,7 @@ static int          init_StatisticObj();
 static void         flushSSDBuffer(SSDBufDesp * ssd_buf_hdr);
 
 static SSDBufDesp*  allocSSDBuf(int cache_type, SSDBufTag ssd_buf_tag);
-static void freeSSDBuf(int cache_type, SSDBufDesp* ssd_buf_hdr);
+void freeSSDBuf(int cache_type, SSDBufDesp* ssd_buf_hdr);
 
 static SSDBufDesp*  pop_freebuf(int cache_type);
 static int          push_freebuf(SSDBufDesp* freeDesp, int cache_type);
@@ -39,7 +39,7 @@ static long         Strategy_Desp_LogOut();
 static int          Strategy_Desp_HitIn(SSDBufDesp* desp);
 static int         Strategy_Desp_LogIn(SSDBufDesp* desp);
 static long map_cache_to_strategy(int cache_type, long desp_id);
-static long map_strategy_to_cache(int cache_type, long desp_id);
+long map_strategy_to_cache(int cache_type, long desp_id);
 
 //#define isSamebuf(SSDBufTag tag1, SSDBufTag tag2) (tag1 == tag2)
 #define CopySSDBufTag(objectTag,sourceTag) (objectTag = sourceTag)
@@ -252,7 +252,7 @@ allocSSDBuf(int cache_type, SSDBufTag ssd_buf_tag)
         long buf_despid_array[max_n_batch];
         int n_evict;
         enum_t_vict suggest_type = (cache_type == 0) ? ENUM_B_Clean : ENUM_B_Dirty;
-        n_evict = Unload_Buf_LRU_rw(buf_despid_array, max_n_batch,suggest_type);
+        n_evict = Unload_Buf_LRU_rw(buf_despid_array, max_n_batch,suggest_type,64);
 
         SSDBufDesp * ssd_buf_desps = (cache_type == 0) ? Desps_Clean : Desps_Dirty;
         int k = 0;
@@ -265,6 +265,7 @@ allocSSDBuf(int cache_type, SSDBufTag ssd_buf_tag)
             freeSSDBuf(cache_type, ssd_buf_hdr);
             k++;
         }
+//        printf("%d.\n",k);
         STT->cacheUsage -= k;
         if(cache_type == 0)
             STT->incache_n_clean -= k;
@@ -286,7 +287,7 @@ allocSSDBuf(int cache_type, SSDBufTag ssd_buf_tag)
     return ssd_buf_hdr;
 }
 
-static void
+void
 freeSSDBuf(int cache_type, SSDBufDesp* ssd_buf_hdr)
 {
     HashTab_Delete(ssd_buf_hdr->ssd_buf_tag, cache_type);
@@ -511,12 +512,21 @@ pop_freebuf(int cache_type)
 {
     SSDBufDespCtrl * ssd_buf_desp_ctrl = (cache_type == 0) ? DespCtrl_Clean : DespCtrl_Dirty;
     SSDBufDesp  * ssd_buf_desps = (cache_type == 0) ? Desps_Clean : Desps_Dirty;
-    if(ssd_buf_desp_ctrl->first_freessd < 0)
+    int usage = (cache_type == 0) ? STT->incache_n_clean : STT->incache_n_dirty;
+    int limit = (cache_type == 0) ? STT->cacheLimit_Clean : STT->cacheLimit_Dirty;
+    if(ssd_buf_desp_ctrl->first_freessd < 0 || usage >= limit)
+    {
+//        if(ssd_buf_desp_ctrl->first_freessd < 0)
+//            printf("pop func, return NULL, ssd_buf_desp_ctrl->first_freessd < 0.\n");
+//        else
+//            printf("pop func, return NULL, usage = %d, limit = %d.\n",usage,limit);
         return NULL;
+    }
     SSDBufDesp* ssd_buf_hdr = &ssd_buf_desps[ssd_buf_desp_ctrl->first_freessd];
     ssd_buf_desp_ctrl->first_freessd = ssd_buf_hdr->next_freessd;
     ssd_buf_hdr->next_freessd = -1;
     ssd_buf_desp_ctrl->n_usedssd++;
+//    printf("pop func, now desp_ctrl->first_freessd = %d.\n",ssd_buf_desp_ctrl->first_freessd);
     return ssd_buf_hdr;
 }
 
@@ -526,6 +536,7 @@ push_freebuf(SSDBufDesp* freeDesp, int cache_type)
     SSDBufDespCtrl * desp_ctrl = (cache_type == 0) ? DespCtrl_Clean : DespCtrl_Dirty;
     freeDesp->next_freessd = desp_ctrl->first_freessd;
     desp_ctrl->first_freessd = freeDesp->serial_id;
+//    printf("push func, now desp_ctrl->first_freessd = %d.\n",desp_ctrl->first_freessd);
     return desp_ctrl->first_freessd;
 }
 
@@ -552,7 +563,7 @@ static long map_cache_to_strategy(int cache_type, long desp_id)
     return cache_type * NBLOCK_CLEAN_CACHE + desp_id;
 }
 
-static long map_strategy_to_cache(int cache_type, long desp_id)
+long map_strategy_to_cache(int cache_type, long desp_id)
 {
     return desp_id - (cache_type * NBLOCK_CLEAN_CACHE) ;
 }

@@ -64,7 +64,7 @@ Del_Buf_LRU_rw(long serial_id, int type)
 }
 
 int
-Unload_Buf_LRU_rw(long * out_despid_array, int max_n_batch, enum_t_vict suggest_type)
+Unload_Buf_LRU_rw(long * out_despid_array, int max_n_batch, enum_t_vict suggest_type,unsigned int evict_num)
 {
     long frozen_id;
     int cnt = 0;
@@ -99,18 +99,18 @@ Unload_Buf_LRU_rw(long * out_despid_array, int max_n_batch, enum_t_vict suggest_
     }
 
 FLAG_EVICT_CLEAN:
-    while(lru_clean_ctrl.last_self_lru >= 0 &&  cnt < EVICT_DITRY_GRAIN){
+    while(lru_clean_ctrl.last_self_lru >= 0 &&  cnt < evict_num){
         victim =  strategy_desp + lru_clean_ctrl.last_self_lru;
-        out_despid_array[cnt] = victim->serial_id;
+	out_despid_array[cnt] = victim->serial_id;
         deleteFromLRU(victim);
         cnt ++ ;
     }
     return cnt;
 
 FLAG_EVICT_DIRTY:
-    while(lru_dirty_ctrl.last_self_lru >= 0 &&  cnt < EVICT_DITRY_GRAIN){
+    while(lru_dirty_ctrl.last_self_lru >= 0 &&  cnt < evict_num){
         victim =  strategy_desp + lru_dirty_ctrl.last_self_lru;
-        out_despid_array[cnt] = victim->serial_id;
+	out_despid_array[cnt] = victim->serial_id;
         deleteFromLRU(victim);
         cnt ++ ;
     }

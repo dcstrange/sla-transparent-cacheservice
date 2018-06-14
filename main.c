@@ -79,13 +79,16 @@ main(int argc, char** argv)
 // 1 4 0 0 500000 106230 5242880 LRU 0
 
 // trace11: 0 0 11 1 0 8000000 30 PV3
-    if (argc == 4)
+    if (argc == 7)
     {
+	initRuntimeInfo();
         NBLOCK_MAX_CACHE_SIZE = atol(argv[1]);
-        NBLOCK_CLEAN_CACHE = NBLOCK_DIRTY_CACHE = NTABLE_CLEAN_CACHE = NTABLE_DIRTY_CACHE = atol(argv[2]);
+        NBLOCK_CLEAN_CACHE = NBLOCK_DIRTY_CACHE = NTABLE_CLEAN_CACHE = NTABLE_DIRTY_CACHE = NBLOCK_MAX_CACHE_SIZE;
+        STT->cacheLimit_Dirty = STT->cacheLimit_Clean = atol(argv[2]);
 
         TraceId = atoi(argv[3]);
         EvictStrategy = LRU_rw;
+	UserId = atoi(argv[6]);
     }
     else
     {
@@ -94,6 +97,8 @@ main(int argc, char** argv)
     }
 
 #ifdef HRC_PROCS_N
+    read_fifo = open(argv[4],O_RDONLY|O_NONBLOCK);
+    write_fifo = open(argv[5],O_RDONLY|O_NONBLOCK);
     int forkcnt = 0;
     while(forkcnt < HRC_PROCS_N)
     {
@@ -146,11 +151,12 @@ main(int argc, char** argv)
         = NBLOCK_CLEAN_CACHE
         = NTABLE_CLEAN_CACHE
         = NBLOCK_MAX_CACHE_SIZE / HRC_PROCS_N * Fork_Pid;
+        STT->cacheLimit_Clean = STT->cacheLimit_Dirty = NBLOCK_CLEAN_CACHE;
         #endif // HRC_PROCS_N
     }
 
 
-    initRuntimeInfo();
+    //initRuntimeInfo();
     //STT->trace_req_amount = trace_req_total[TraceId];
     CacheLayer_Init();
 
@@ -175,6 +181,7 @@ main(int argc, char** argv)
     close(ssd_clean_fd);
     close(ssd_dirty_fd);
     CloseLogFile();
+    printf("now waiting.\n");
     wait(NULL);
     exit(EXIT_SUCCESS);
 }

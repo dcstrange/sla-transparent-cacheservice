@@ -25,6 +25,10 @@ struct RuntimeSTAT
     blkcnt_t cacheLimit;
     blkcnt_t cacheUsage;
 
+    blkcnt_t cacheLimit_Dirty;
+
+    blkcnt_t cacheLimit_Clean;
+
     blkcnt_t reqcnt_s;
     blkcnt_t reqcnt_r;
     blkcnt_t reqcnt_w;
@@ -146,5 +150,7 @@ extern char* PATH_LOG;
 extern int PipeEnds_of_MAIN[];
 extern int PipeEnd_of_HRC;
 extern pid_t Fork_Pid; /* Default 0. If is a HRC process, this must be large than 0 */
+extern read_fifo;
+extern write_fifo;
 #define I_AM_HRC_PROC Fork_Pid
 #endif

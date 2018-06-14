@@ -9,7 +9,7 @@ CPPFLAGS += -I$(SMR_SSD_CACHE_DIR) -I$(SMR_SSD_CACHE_DIR)/smr-simulator -I$(SMR_
 
 RM = rm -rf
 RMSHM = rm -f /dev/shm/*
-OBJS = global.o report.o timerUtils.o shmlib.o hashtable_utils.o cache.o trace2call.o daemon.o main.o lru_rw.o smr-simulator.o inner_ssd_buf_table.o simulator_logfifo.o  simulator_v2.o
+OBJS = global.o report.o pipelib.o  hrc.o sla_transparent.o timerUtils.o shmlib.o hashtable_utils.o cache.o trace2call.o daemon.o main.o lru_rw.o smr-simulator.o inner_ssd_buf_table.o simulator_logfifo.o  simulator_v2.o
 
 
 all: $(OBJS) smr-ssd-cache
@@ -22,6 +22,15 @@ global.o: global.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $?
 
 report.o: report.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $?
+
+pipelib.o: /home/fei/git/Func-Utils/pipelib.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $?
+
+sla_transparent.o: sla_transparent.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $?
+
+hrc.o: hrc.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $?
 
 shmlib.o: shmlib.c
@@ -101,3 +110,4 @@ clean:
 	$(RM) *.o
 	$(RM) $(SMR_SSD_CACHE_DIR)/smr-ssd-cache
 	$(RMSHM)
+	$(RM) /tmp/hrc_*

@@ -6,7 +6,7 @@
 #include "../cache.h"
 
 extern int initSSDBufferFor_LRU_rw();
-extern int Unload_Buf_LRU_rw(long * out_despid_array, int max_n_batch, enum_t_vict suggest_type);
+extern int Unload_Buf_LRU_rw(long * out_despid_array, int max_n_batch, enum_t_vict suggest_type,unsigned int evict_num);
 extern int hitInBuffer_LRU_rw(long serial_id, unsigned flag);
 extern int insertBuffer_LRU_rw(long serial_id, unsigned flag);
 #endif // _LRU_PRIVATE_H_

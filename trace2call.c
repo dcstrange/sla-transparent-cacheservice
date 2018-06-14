@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include <unistd.h>
+#include <math.h>
 
 #include "global.h"
 #include "statusDef.h"
@@ -12,21 +13,27 @@
 #include "strategy/lru.h"
 #include "trace2call.h"
 #include "report.h"
+#include "sla_transparent.h"
 #include "strategy/strategies.h"
 
 #include "/home/fei/git/Func-Utils/pipelib.h"
 #include "hrc.h"
 extern struct RuntimeSTAT* STT;
 #define REPORT_INTERVAL 50000
+#define KTOG 1048576
 
 static void do_HRC();
 static void reportCurInfo();
 static void report_ontime();
 static void resetStatics();
 
-static timeval  tv_trace_start, tv_trace_end;
+static timeval  tv_trace_start, tv_trace_end, tv_period_start, tv_period_end;
+static double time_period;
 static double time_trace;
 
+/** for bandwitdth statistics **/
+static timeval  tv_window_start;
+blkcnt_t req_r_window,req_w_window;
 /** single request statistic information **/
 static timeval          tv_req_start, tv_req_stop;
 static microsecond_t    msec_req;
@@ -68,7 +75,9 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
     }
 
     _TimerLap(&tv_trace_start);
+    _TimerLap(&tv_window_start);
     static int req_cnt = 0;
+    req_r_window = req_w_window = 0;
 
     blkcnt_t total_n_req = isWriteOnly ? 100000000 : 200000000;
     blkcnt_t skiprows = 0; //isWriteOnly ? 50000000 : 100000000;
@@ -80,8 +89,103 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
         exit(EXIT_FAILURE);
     }
 
+    #ifdef HRC_PROCS_N
+    static int max_n_batch = 8 * 1024;
+    long *buf_despid_array;
+    int n_evict;
+    #endif // HRC_PROCS_N
+
+    double read_cost_ssd = 0.0,read_cost_storage = 0.0;
+    double write_cost_ssd = 0.0,write_cost_storage = 0.0;
+    blkcnt_t hit_r_record = 0,hit_w_record = 0;
+    blkcnt_t req_r_record = 0,req_w_record = 0;
+
+    _TimerLap(&tv_period_start);
+
     while (!feof(trace))//  && STT->reqcnt_s < total_n_req) // 84340000
     {
+	#ifdef HRC_PROCS_N
+        char new_cachesize[128];
+        int ret=read(read_fifo,new_cachesize,128);
+        if(ret==128)
+        {
+            _TimerLap(&tv_period_end);
+            time_period = Mirco2Sec(TimerInterval_MICRO(&tv_period_start,&tv_period_end));
+            tv_period_start = tv_period_end;
+            blkcnt_t hitmiss_period = STT->reqcnt_r - req_r_record - (STT->hitnum_r - hit_r_record);
+            double miss_r_ratio = (STT->reqcnt_r - req_r_record == 0) ? 0: 1 - (STT->hitnum_r - hit_r_record)/(double)(STT->reqcnt_r - req_r_record);
+
+            read_cost_ssd += (P0 * BG0 * STT->cacheLimit_Clean * 4/KTOG + P(read_bw[UserId]*miss_r_ratio,STT->cacheLimit_Clean * 4.0/KTOG))*time_period;
+            if(isnan(read_cost_ssd))
+            {
+                printf("bw converted to P is %lf,miss_r_ratio = %lf,bw*miss = %lf\n",read_bw[UserId],miss_r_ratio,read_bw[UserId]*miss_r_ratio);
+                printf("%lf,%lf,%lf\n",P0 * BG0 * STT->cacheLimit_Clean * 4/KTOG,P(read_bw[UserId]*miss_r_ratio,STT->cacheLimit_Clean * 4.0/KTOG),(P0 * BG0 * STT->cacheLimit_Clean * 4/KTOG + P(read_bw[UserId]*miss_r_ratio,STT->cacheLimit_Clean * 4.0/KTOG))*time_period);
+                exit(-1);
+            }
+            printf("read_cost_ssd is %lf\n",read_cost_ssd);
+            req_r_record = STT->reqcnt_r;
+            hit_r_record = STT->hitnum_r;
+
+
+            read_cost_storage += hitmiss_period * 4 * BW_R/KTOG;
+            STT->cacheLimit_Clean = atoi(new_cachesize);
+            if(STT->cacheLimit_Clean < STT->incache_n_clean)
+            {
+                buf_despid_array = (long *)malloc(sizeof(long)*(STT->incache_n_clean - STT->cacheLimit_Clean + 10));
+                int n_evict = Unload_Buf_LRU_rw(buf_despid_array, max_n_batch,ENUM_B_Clean,STT->incache_n_clean - STT->cacheLimit_Clean);
+                SSDBufDesp * ssd_buf_desps = Desps_Clean;
+                int k = 0;
+                while(k < n_evict)
+                {
+                    long out_despId = buf_despid_array[k];
+                    out_despId = map_strategy_to_cache(ENUM_B_Clean, out_despId);
+                    SSDBufDesp *ssd_buf_hdr = &ssd_buf_desps[out_despId];
+
+                    freeSSDBuf(ENUM_B_Clean, ssd_buf_hdr);
+                    k++;
+                }
+                STT->cacheUsage -= k;
+                STT->incache_n_clean -= k;
+                free(buf_despid_array);
+            }
+            printf("STT->cacheLimit_Clean was resized to %d.\n",STT->cacheLimit_Clean);
+        }
+
+        ret=read(write_fifo,new_cachesize,128);
+        if(ret==128)
+        {
+            blkcnt_t hitmiss_period = STT->reqcnt_w - req_w_record - (STT->hitnum_w - hit_w_record);
+            req_w_record = STT->reqcnt_w;
+            hit_w_record = STT->hitnum_w;
+
+            write_cost_ssd += (P0 * BG0 * STT->cacheLimit_Dirty * 4/KTOG + P(write_bw[UserId],STT->cacheLimit_Dirty * 4.0/KTOG))*time_period;
+            write_cost_storage += hitmiss_period * 4 * BW_W/KTOG;
+
+            STT->cacheLimit_Dirty = atoi(new_cachesize);
+            if(STT->cacheLimit_Dirty < STT->incache_n_dirty)
+            {
+                buf_despid_array = (long *)malloc(sizeof(long)*(STT->incache_n_dirty - STT->cacheLimit_Dirty + 10));
+                n_evict = Unload_Buf_LRU_rw(buf_despid_array, max_n_batch,ENUM_B_Dirty,STT->incache_n_dirty - STT->cacheLimit_Dirty);
+                SSDBufDesp * ssd_buf_desps = Desps_Dirty;
+                int k = 0;
+                while(k < n_evict)
+                {
+                    long out_despId = buf_despid_array[k];
+                    out_despId = map_strategy_to_cache(ENUM_B_Dirty, out_despId);
+                    SSDBufDesp *ssd_buf_hdr = &ssd_buf_desps[out_despId];
+
+                    freeSSDBuf(ENUM_B_Dirty, ssd_buf_hdr);
+                    k++;
+                }
+                STT->cacheUsage -= k;
+                STT->incache_n_dirty -= k;
+                free(buf_despid_array);
+            }
+            printf("STT->cacheLimit_Dirty was resized to %d.\n",STT->cacheLimit_Dirty);
+        }
+
+
+	#endif //HRC_PROCS_N
         returnCode = fscanf(trace, "%c %d %lu\n", &action, &i, &offset);
         if (returnCode < 0)
         {
@@ -124,7 +228,7 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
         _TimerLap(&tv_req_start);
 #endif // TIMER_SINGLE_REQ
         sprintf(pipebuf,"%c,%lu\n",action,offset);
-        if (isWriteOnly && action == ACT_WRITE) // Write = 1
+        if (action == ACT_WRITE) // Write = 1
         {
             STT->reqcnt_w ++;
             STT->reqcnt_s ++;
@@ -177,15 +281,38 @@ IO_Listening(char *trace_file_path, int isWriteOnly,off_t startLBA)
         //ResizeCacheUsage();
     }
 
+    _TimerLap(&tv_period_end);
+    time_period = Mirco2Sec(TimerInterval_MICRO(&tv_period_start,&tv_period_end));
+    tv_period_start = tv_period_end;
+
+    report_ontime();
     _TimerLap(&tv_trace_end);
     time_trace = Mirco2Sec(TimerInterval_MICRO(&tv_trace_start,&tv_trace_end));
     reportCurInfo();
+
+    blkcnt_t hitmiss_period = STT->reqcnt_r - req_r_record - (STT->hitnum_r - hit_r_record);
+    double miss_r_ratio = (STT->reqcnt_r - req_r_record == 0) ? 0: 1 - (STT->hitnum_r - hit_r_record)/(double)(STT->reqcnt_r - req_r_record);
+
+    read_cost_ssd += (P0 * BG0 * STT->cacheLimit_Clean * 4/KTOG + P(read_bw[UserId]*miss_r_ratio,STT->cacheLimit_Clean * 4.0/KTOG))*time_period;
+    req_r_record = STT->reqcnt_r;
+    hit_r_record = STT->hitnum_r;
+
+    read_cost_storage += hitmiss_period * 4 * BW_R/KTOG;
+
+    hitmiss_period = STT->reqcnt_w - req_w_record - (STT->hitnum_w - hit_w_record);
+    req_w_record = STT->reqcnt_w;
+    hit_w_record = STT->hitnum_w;
+    write_cost_ssd += (P0 * BG0 * STT->cacheLimit_Dirty * 4/KTOG + P(write_bw[UserId],STT->cacheLimit_Dirty * 4.0/KTOG))*time_period;
+    write_cost_storage += hitmiss_period * 4 * BW_W/KTOG;
+
+    printf("The read cost on ssd is %lf, the read cost on storage is %lf, total cost is %lf\n",read_cost_ssd,read_cost_storage,read_cost_ssd + read_cost_storage);
+    printf("The write cost on ssd is %lf, the write cost on storage is %lf, total cost is %lf\n",write_cost_ssd,write_cost_storage,write_cost_ssd + write_cost_storage);
 
     #ifdef HRC_PROCS_N
     for(i = 0; i < HRC_PROCS_N; i++)
     {
         sprintf(pipebuf,"EOF\n");
-        pipe_write(PipeEnds_of_MAIN[i],pipebuf,64);
+        pipe_write(PipeEnds_of_MAIN[i],pipebuf,strlen(pipebuf));
     }
     #endif // HRC_PROCS_N
     free(ssd_buffer);
@@ -267,6 +394,11 @@ static void report_ontime()
         _TimerLap(&tv_trace_end);
         int timecost = Mirco2Sec(TimerInterval_MICRO(&tv_trace_start,&tv_trace_end));
         printf("current run time: %d\n",timecost);
+        double window = Mirco2Sec(TimerInterval_MICRO(&tv_window_start,&tv_trace_end));
+        printf("this window, read bandwidth is %lf, write bandwidth is %lf\n",(STT->reqcnt_r-req_r_window)*4/window,(STT->reqcnt_w-req_w_window)*4/window);
+        tv_window_start = tv_trace_end;
+        req_r_window = STT->reqcnt_r;
+        req_w_window = STT->reqcnt_w;
 }
 
 static void resetStatics()
